@@ -44,6 +44,7 @@ public class Main {
             String method = requestParts[0];
             String path = requestParts[1];
             String userAgent = "";
+            String acceptEncoding = "";
             int contentLength = 0;
             String line;
 
@@ -52,11 +53,13 @@ public class Main {
                 userAgent = line.substring(12);
               } else if (line.startsWith("Content-Length: ")) {
                 contentLength = Integer.parseInt(line.substring(16).trim());
+              } else if (line.startsWith("Accept-Encoding: ")) {
+                acceptEncoding = line.substring(17).trim();
               }
             }
 
             if (method.equals("GET")) {
-              handleGetRequest(path, finalDirectory, outputStream, userAgent);
+              handleGetRequest(path, finalDirectory, outputStream, userAgent, acceptEncoding);
             } else if (method.equals("POST")) {
               handlePostRequest(path, finalDirectory, reader, outputStream, contentLength);
             }
@@ -76,7 +79,7 @@ public class Main {
     }
   }
 
-  private static void handleGetRequest(String path, String finalDirectory, OutputStream outputStream, String userAgent) throws IOException {
+  private static void handleGetRequest(String path, String finalDirectory, OutputStream outputStream, String userAgent, String acceptEncoding) throws IOException {
     if (path.startsWith("/files/")) {
       String fileName = path.substring(7);
       Path filePath = Paths.get(finalDirectory, fileName);
@@ -97,9 +100,16 @@ public class Main {
       outputStream.write(response.getBytes());
     } else if (path.startsWith("/echo/")) {
       String randomString = path.substring(6);
-      String response =
-              "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
-                      randomString.length() + "\r\n\r\n" + randomString;
+      String response;
+      if (acceptEncoding.contains("gzip")) {
+        response =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: " +
+                        randomString.length() + "\r\n\r\n" + randomString; // Here, you would normally compress the content
+      } else {
+        response =
+                "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
+                        randomString.length() + "\r\n\r\n" + randomString;
+      }
       outputStream.write(response.getBytes());
     } else if (path.equals("/")) {
       outputStream.write("HTTP/1.1 200 OK\r\n\r\n".getBytes());
