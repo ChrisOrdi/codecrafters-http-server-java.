@@ -1,5 +1,6 @@
 import java.io.BufferedOutputStream;
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
@@ -9,6 +10,7 @@ import java.net.Socket;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.zip.GZIPOutputStream;
 
 public class Main {
   public static void main(String[] args) {
@@ -101,16 +103,25 @@ public class Main {
     } else if (path.startsWith("/echo/")) {
       String randomString = path.substring(6);
       String response;
+      byte[] responseBody = randomString.getBytes();
       if (acceptEncoding.contains("gzip")) {
+        ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+        try (GZIPOutputStream gzipOutputStream = new GZIPOutputStream(byteArrayOutputStream)) {
+          gzipOutputStream.write(responseBody);
+        }
+        byte[] compressedBody = byteArrayOutputStream.toByteArray();
         response =
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Encoding: gzip\r\nContent-Length: " +
-                        randomString.length() + "\r\n\r\n" + randomString; // Here, you would normally compress the content
+                        compressedBody.length + "\r\n\r\n";
+        outputStream.write(response.getBytes());
+        outputStream.write(compressedBody);
       } else {
         response =
                 "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
-                        randomString.length() + "\r\n\r\n" + randomString;
+                        responseBody.length + "\r\n\r\n";
+        outputStream.write(response.getBytes());
+        outputStream.write(responseBody);
       }
-      outputStream.write(response.getBytes());
     } else if (path.equals("/")) {
       outputStream.write("HTTP/1.1 200 OK\r\n\r\n".getBytes());
     } else {
