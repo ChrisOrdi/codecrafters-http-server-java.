@@ -1,11 +1,12 @@
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
 
 public class Main {
   public static void main(String[] args) {
-    // You can use print statements as follows for debugging, they'll be visible when running tests.
     System.out.println("Logs from your program will appear here!");
 
     ServerSocket serverSocket = null;
@@ -14,11 +15,25 @@ public class Main {
     try {
       serverSocket = new ServerSocket(4221);
       serverSocket.setReuseAddress(true);
-      clientSocket = serverSocket.accept(); // Wait for connection from client.
+      clientSocket = serverSocket.accept();
       System.out.println("Accepted new connection");
 
+      // Read the request line
+      BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+      String requestLine = in.readLine();
+      System.out.println("Request Line: " + requestLine);
+
+      // Extract the URL path
+      String[] requestParts = requestLine.split(" ");
+      String urlPath = requestParts[1];
+
       // Prepare the HTTP response
-      String httpResponse = "HTTP/1.1 200 OK\r\n\r\n";
+      String httpResponse;
+      if ("/".equals(urlPath)) {
+        httpResponse = "HTTP/1.1 200 OK\r\n\r\n";
+      } else {
+        httpResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
+      }
 
       // Send the HTTP response to the client
       OutputStream clientOutput = clientSocket.getOutputStream();
