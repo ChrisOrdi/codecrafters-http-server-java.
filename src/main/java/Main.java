@@ -4,98 +4,97 @@ import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.HashMap;
-import java.util.Map;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class Main {
   public static void main(String[] args) {
-    System.out.println("Logs from your program will appear here!");
+    String directory = null;
+    if ((args.length == 2) && (args[0].equalsIgnoreCase("--directory"))) {
+      directory = args[1];
+    }
 
-    ServerSocket serverSocket = null;
+    if (directory == null) {
+      // Standaard directory instellen
+      directory = "/default/directory/path";
+    }
 
-    try {
-      serverSocket = new ServerSocket(4221);
+    try (ServerSocket serverSocket = new ServerSocket(4221)) {
       serverSocket.setReuseAddress(true);
-
       while (true) {
-        try (Socket clientSocket = serverSocket.accept()) {
-          System.out.println("Accepted new connection");
+        Socket clientSocket = serverSocket.accept();
+        final String finalDirectory = directory;
+        new Thread(() -> {
+          try (BufferedReader reader = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
+               OutputStream outputStream = clientSocket.getOutputStream()) {
 
-          BufferedReader in = new BufferedReader(new InputStreamReader(clientSocket.getInputStream()));
-          String requestLine = in.readLine();
-          System.out.println("Request Line: " + requestLine);
-
-          if (requestLine == null) {
-            continue;
-          }
-
-          // Read headers
-          Map<String, String> headers = new HashMap<>();
-          String headerLine;
-          while (!(headerLine = in.readLine()).isEmpty()) {
-            String[] headerParts = headerLine.split(": ", 2);
-            if (headerParts.length == 2) {
-              headers.put(headerParts[0].toLowerCase(), headerParts[1]);
+            String requestLine = reader.readLine();
+            if (requestLine == null || requestLine.isEmpty()) {
+              return;
             }
-          }
 
-          String[] requestParts = requestLine.split(" ");
-          String method = requestParts[0];
-          String urlPath = requestParts[1];
+            String[] requestParts = requestLine.split(" ");
+            if (requestParts.length < 2) {
+              return;
+            }
 
-          String httpResponse;
-          if (method.equals("GET")) {
-            if (urlPath.equals("/")) {
-              httpResponse = "HTTP/1.1 200 OK\r\n\r\n";
-            } else if (urlPath.startsWith("/echo/")) {
-              String message = urlPath.substring(6);
-              String responseBody = message;
-              String contentType = "text/plain";
-              int contentLength = responseBody.length();
+            String method = requestParts[0];
+            String path = requestParts[1];
+            String userAgent = "";
+            String line;
 
-              httpResponse = "HTTP/1.1 200 OK\r\n" +
-                      "Content-Type: " + contentType + "\r\n" +
-                      "Content-Length: " + contentLength + "\r\n" +
-                      "\r\n" +
-                      responseBody;
-            } else if (urlPath.equals("/user-agent")) {
-              String userAgent = headers.get("user-agent");
-              if (userAgent == null) {
-                userAgent = "";
+            while (!(line = reader.readLine()).equals("")) {
+              if (line.startsWith("User-Agent: ")) {
+                userAgent = line.substring(12);
               }
-              String responseBody = userAgent;
-              String contentType = "text/plain";
-              int contentLength = responseBody.length();
-
-              httpResponse = "HTTP/1.1 200 OK\r\n" +
-                      "Content-Type: " + contentType + "\r\n" +
-                      "Content-Length: " + contentLength + "\r\n" +
-                      "\r\n" +
-                      responseBody;
-            } else {
-              httpResponse = "HTTP/1.1 404 Not Found\r\n\r\n";
             }
-          } else {
-            httpResponse = "HTTP/1.1 405 Method Not Allowed\r\n\r\n";
-          }
 
-          OutputStream clientOutput = clientSocket.getOutputStream();
-          clientOutput.write(httpResponse.getBytes("UTF-8"));
-          clientOutput.flush();
-        } catch (IOException e) {
-          System.out.println("IOException: " + e.getMessage());
-        }
+            if (method.equals("GET")) {
+              if (path.startsWith("/files/")) {
+                String fileName = path.substring(7);
+                Path filePath = Paths.get(finalDirectory, fileName);
+                if (Files.exists(filePath)) {
+                  byte[] fileBytes = Files.readAllBytes(filePath);
+                  String response =
+                          "HTTP/1.1 200 OK\r\nContent-Type: application/octet-stream\r\nContent-Length: " +
+                                  fileBytes.length + "\r\n\r\n";
+                  outputStream.write(response.getBytes());
+                  outputStream.write(fileBytes);
+                } else {
+                  outputStream.write("HTTP/1.1 404 Not Found\r\n\r\n".getBytes());
+                }
+              } else if (path.startsWith("/user-agent")) {
+                String response =
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
+                                userAgent.length() + "\r\n\r\n" + userAgent;
+                outputStream.write(response.getBytes());
+              } else if (path.startsWith("/echo/")) {
+                String randomString = path.substring(6);
+                String response =
+                        "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: " +
+                                randomString.length() + "\r\n\r\n" + randomString;
+                outputStream.write(response.getBytes());
+              } else if (path.equals("/")) {
+                outputStream.write("HTTP/1.1 200 OK\r\n\r\n".getBytes());
+              } else {
+                outputStream.write("HTTP/1.1 404 Not Found\r\n\r\n".getBytes());
+              }
+              outputStream.flush();
+            }
+          } catch (IOException e) {
+            System.out.println("IOException: " + e.getMessage());
+          } finally {
+            try {
+              clientSocket.close();
+            } catch (IOException e) {
+              System.out.println("IOException: " + e.getMessage());
+            }
+          }
+        }).start();
       }
     } catch (IOException e) {
       System.out.println("IOException: " + e.getMessage());
-    } finally {
-      try {
-        if (serverSocket != null) {
-          serverSocket.close();
-        }
-      } catch (IOException e) {
-        System.out.println("IOException during close: " + e.getMessage());
-      }
     }
   }
 }
